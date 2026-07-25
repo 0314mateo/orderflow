@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OrderFlow.Inventory.Worker/OrderFlow.Inventory.Worker.csproj" Id="fc17a2f3-fb85-4263-ab4c-00d0a9bfe362" />
+    <Project Path="src/OrderFlow.Orders.Api/OrderFlow.Orders.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OrderFlow.Orders.Tests/OrderFlow.Orders.Tests.csproj" />
+  </Folder>
+  <Project Path="src/OrderFlow.Contracts/OrderFlow.Contracts.csproj" Id="e45f060f-0c63-4d75-b463-519a4b50a296" />
+  <Project Path="tests/OrderFlow.Inventory.Tests/OrderFlow.Inventory.Tests.csproj" Id="b503f58d-a75f-46c4-ac37-7538817438c8" />
+</Solution>
