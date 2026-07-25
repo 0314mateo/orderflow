@@ -1,0 +1,27 @@
+# .NET
+bin/
+obj/
+*.user
+
+# Bases de datos SQLite locales (no deben ir al repo — se generan con el seed)
+*.db
+*.db-shm
+*.db-wal
+
+# Node / React
+node_modules/
+dist/
+
+# Variables de entorno (nunca subir secretos/config local)
+.env
+.env.local
+
+# Visual Studio / VS Code
+.vs/
+.vscode/*
+!.vscode/extensions.json
+*.slnLaunch.user
+
+# OS
+.DS_Store
+Thumbs.db
