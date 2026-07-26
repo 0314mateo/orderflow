@@ -23,7 +23,7 @@ Sistema distribuido de pedidos con reserva de inventario asíncrona, desarrollad
 ### Levantar todo el sistema
 
 ```bash
-git clone <url-del-repositorio>
+git clone https://github.com/0314mateo/orderflow.git
 cd orderflow
 docker compose up --build
 ```
@@ -56,23 +56,21 @@ El sistema siembra automáticamente 3 productos al arrancar (`ABC-01`, `ABC-02`,
 
 ## Arquitectura general
 
-┌─────────────┐ HTTP ┌──────────────┐
-│ Frontend │ ─────────────▶ │ Orders API │
-│ (React) │ ◀───────────── │ (.NET 10) │
-└─────────────┘ polling 3s └──────┬───────┘
-│ publica OrderCreated
-│ consume StockReserved/Rejected
-▼
-┌──────────────┐
-│ RabbitMQ │
-└──────┬───────┘
-│ consume OrderCreated
-│ publica StockReserved/Rejected
-▼
-┌──────────────────┐
-│ Inventory Worker │
-│ (.NET 10) │
-└───────────────────┘
+```mermaid
+flowchart LR
+    A[Frontend<br/>React]
+    B[Orders API<br/>.NET 10]
+    C[RabbitMQ]
+    D[Inventory Worker<br/>.NET 10]
+
+    A -->|HTTP| B
+    B -->|Polling 3 s| A
+
+    B -->|OrderCreated| C
+    C -->|Consume| D
+    D -->|StockReserved / StockRejected| C
+    C -->|Resultado| B
+```
 
 - **Orders API**: expone REST para crear/consultar pedidos. Persiste en su propia base SQLite (`orders.db`).
 - **Inventory Worker**: consume eventos, gestiona el stock real. Persiste en su propia base SQLite (`inventory.db`), independiente de Orders.
@@ -101,9 +99,12 @@ El sistema siembra automáticamente 3 productos al arrancar (`ABC-01`, `ABC-02`,
   "sku": "string",
   "cantidad": 1,
   "estado": "Pending | Confirmed | Rejected",
+  "detalle": "string | null",
+  "stockRestante": "int | null",
   "creadoEn": "fecha"
 }
 ```
+`detalle` y `stockRestante` quedan en `null` mientras el pedido está en `Pending` — se completan cuando Orders API consume la respuesta de Inventory Worker (`StockReserved`/`StockRejected`). `detalle` explica qué pasó ("Stock reservado correctamente" o el motivo de rechazo), y `stockRestante` refleja cuánto quedaba disponible del sku en ese momento.
 
 ### Stock (Inventory Worker)
 
@@ -131,8 +132,8 @@ El sistema siembra automáticamente 3 productos al arrancar (`ABC-01`, `ABC-02`,
 public record OrderCreated(Guid EventId, Guid OrderId, string Sku, int Cantidad, DateTime OcurridoEn);
 
 // Inventory Worker → Orders API
-public record StockReserved(Guid EventId, Guid OrderId, string Sku, int Cantidad, DateTime OcurridoEn);
-public record StockRejected(Guid EventId, Guid OrderId, string Sku, int Cantidad, string Motivo, DateTime OcurridoEn);
+public record StockReserved(Guid EventId, Guid OrderId, string Sku, int Cantidad, int StockRestante, DateTime OcurridoEn);
+public record StockRejected(Guid EventId, Guid OrderId, string Sku, int Cantidad, string Motivo, int StockRestante, DateTime OcurridoEn);
 ```
 
 Los tres eventos viven en un proyecto de clases compartido, referenciado por ambos servicios — ver la sección de arquitectura para el razonamiento detrás de esta decisión.
