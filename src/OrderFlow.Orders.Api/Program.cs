@@ -9,11 +9,14 @@ using OrderFlow.Contracts;
 using OrderFlow.Orders.Api.Consumers;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var frontendOrigin = builder.Configuration["Cors:FrontendOrigin"] ?? "http://localhost:5173";
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
     {
-        policy.WithOrigins("http://localhost:5173")
+        policy.WithOrigins(frontendOrigin)
               .AllowAnyMethod()
               .AllowAnyHeader();
     });

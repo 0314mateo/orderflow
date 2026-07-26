@@ -1,12 +1,10 @@
-version: "3.9"
-
 services:
   rabbitmq:
     image: rabbitmq:3.13-management
     container_name: orderflow-rabbitmq
     ports:
-      - "5672:5672"     # puerto AMQP (para las apps)
-      - "15672:15672"   # panel de administración web
+      - "5672:5672"
+      - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
@@ -15,3 +13,54 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  orders-api:
+    build:
+      context: .
+      dockerfile: src/OrderFlow.Orders.Api/Dockerfile
+    container_name: orderflow-orders-api
+    ports:
+      - "8080:8080"
+    environment:
+      ConnectionStrings__OrdersDb: "Data Source=/data/orders.db"
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Username: guest
+      RabbitMq__Password: guest
+      Cors__FrontendOrigin: "http://localhost:3000"
+    volumes:
+      - orders-data:/data
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  inventory-worker:
+    build:
+      context: .
+      dockerfile: src/OrderFlow.Inventory.Worker/Dockerfile
+    container_name: orderflow-inventory-worker
+    environment:
+      ConnectionStrings__InventoryDb: "Data Source=/data/inventory.db"
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Username: guest
+      RabbitMq__Password: guest
+    volumes:
+      - inventory-data:/data
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./src/OrderFlow.Frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: "http://localhost:8080"
+    container_name: orderflow-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - orders-api
+
+volumes:
+  orders-data:
+  inventory-data:
