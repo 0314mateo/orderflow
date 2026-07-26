@@ -59,7 +59,7 @@ public class StockConsumersTests
             await db.SaveChangesAsync();
         }
 
-        await harness.Bus.Publish(new StockReserved(Guid.NewGuid(), pedidoId, "ABC-01", 1, DateTime.UtcNow));
+        await harness.Bus.Publish(new StockReserved(Guid.NewGuid(), pedidoId, "ABC-01", 1, 49, DateTime.UtcNow));
 
         Assert.True(await harness.Consumed.Any<StockReserved>());
 
@@ -67,6 +67,7 @@ public class StockConsumersTests
         var pedido = await scopeFinal.ServiceProvider.GetRequiredService<OrdersDbContext>().Pedidos.FindAsync(pedidoId);
 
         Assert.Equal(EstadoPedido.Confirmed, pedido!.Estado);
+        Assert.Equal(49, pedido.StockRestante);
 
         await harness.Stop();
     }
@@ -95,7 +96,7 @@ public class StockConsumersTests
             await db.SaveChangesAsync();
         }
 
-        await harness.Bus.Publish(new StockRejected(Guid.NewGuid(), pedidoId, "ABC-01", 1, "Stock insuficiente", DateTime.UtcNow));
+        await harness.Bus.Publish(new StockRejected(Guid.NewGuid(), pedidoId, "ABC-01", 1, "Stock insuficiente", 0, DateTime.UtcNow));
 
         Assert.True(await harness.Consumed.Any<StockRejected>());
 

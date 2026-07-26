@@ -13,21 +13,21 @@ public class OrderCreatedConsumer(StockService stockService, ILogger<OrderCreate
 
         logger.LogInformation("Procesando OrderCreated {OrderId} (evento {EventId})", evt.OrderId, evt.EventId);
 
-        var resultado = await stockService.ReservarStockAsync(
+        var reserva = await stockService.ReservarStockAsync(
             evt.EventId, evt.Sku, evt.Cantidad, context.CancellationToken);
 
-        switch (resultado)
+        switch (reserva.Resultado)
         {
             case ResultadoReserva.Reservado:
                 await context.Publish(new StockReserved(
-                    Guid.NewGuid(), evt.OrderId, evt.Sku, evt.Cantidad, DateTime.UtcNow));
-                logger.LogInformation("Stock reservado para pedido {OrderId}", evt.OrderId);
+                    Guid.NewGuid(), evt.OrderId, evt.Sku, evt.Cantidad, reserva.StockRestante, DateTime.UtcNow));
+                logger.LogInformation("Stock reservado para pedido {OrderId}. Restante: {StockRestante}", evt.OrderId, reserva.StockRestante);
                 break;
 
             case ResultadoReserva.Rechazado:
                 await context.Publish(new StockRejected(
-                    Guid.NewGuid(), evt.OrderId, evt.Sku, evt.Cantidad, "Stock insuficiente", DateTime.UtcNow));
-                logger.LogInformation("Stock rechazado para pedido {OrderId}", evt.OrderId);
+                    Guid.NewGuid(), evt.OrderId, evt.Sku, evt.Cantidad, "Stock insuficiente", reserva.StockRestante, DateTime.UtcNow));
+                logger.LogInformation("Stock rechazado para pedido {OrderId}. Disponible: {StockRestante}", evt.OrderId, reserva.StockRestante);
                 break;
 
             case ResultadoReserva.YaProcesado:

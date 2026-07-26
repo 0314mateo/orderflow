@@ -16,7 +16,9 @@ public class StockReservedConsumer(OrdersDbContext db, ILogger<StockReservedCons
         var filasAfectadas = await db.Pedidos
             .Where(p => p.Id == evt.OrderId && p.Estado == EstadoPedido.Pending)
             .ExecuteUpdateAsync(setters => setters
-                .SetProperty(p => p.Estado, EstadoPedido.Confirmed));
+                .SetProperty(p => p.Estado, EstadoPedido.Confirmed)
+                .SetProperty(p => p.Detalle, "Stock reservado correctamente")
+                .SetProperty(p => p.StockRestante, evt.StockRestante));
 
         if (filasAfectadas > 0)
             logger.LogInformation("Pedido {OrderId} confirmado", evt.OrderId);

@@ -53,31 +53,35 @@ const ListaPedidos = forwardRef((_props, ref) => {
             {error && <p className="error-mensaje">{error}</p>}
 
             <table>
-                <thead>
-                    <tr>
-                        <th>Cliente</th>
-                        <th>SKU</th>
-                        <th>Cantidad</th>
-                        <th>Estado</th>
-                        <th>Creado</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {pedidos.map((p) => (
-                        <tr key={p.id}>
-                            <td>{p.clienteNombre}</td>
-                            <td>{p.sku}</td>
-                            <td>{p.cantidad}</td>
-                            <td>
-                                <span className={`badge ${ESTADO_CLASES[p.estado]}`}>
-                                    {ESTADO_LABELS[p.estado]}
-                                </span>
-                            </td>
-                            <td>{new Date(p.creadoEn).toLocaleString()}</td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
+  <thead>
+    <tr>
+      <th>Cliente</th>
+      <th>SKU</th>
+      <th>Cantidad</th>
+      <th>Estado</th>
+      <th>Detalle</th>
+      <th>Stock restante</th>
+      <th>Creado</th>
+    </tr>
+  </thead>
+  <tbody>
+    {pedidos.map((p) => (
+      <tr key={p.id}>
+        <td>{p.clienteNombre}</td>
+        <td>{p.sku}</td>
+        <td>{p.cantidad}</td>
+        <td>
+          <span className={`badge ${ESTADO_CLASES[p.estado]}`}>
+            {ESTADO_LABELS[p.estado]}
+          </span>
+        </td>
+        <td>{p.detalle ?? "—"}</td>
+        <td>{p.stockRestante ?? "—"}</td>
+        <td>{new Date(p.creadoEn).toLocaleString()}</td>
+      </tr>
+    ))}
+  </tbody>
+</table>
 
             {pedidos.length === 0 && !error && <p>No hay pedidos todavía.</p>}
         </div>

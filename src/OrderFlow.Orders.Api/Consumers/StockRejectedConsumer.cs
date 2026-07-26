@@ -16,7 +16,9 @@ public class StockRejectedConsumer(OrdersDbContext db, ILogger<StockRejectedCons
         var filasAfectadas = await db.Pedidos
             .Where(p => p.Id == evt.OrderId && p.Estado == EstadoPedido.Pending)
             .ExecuteUpdateAsync(setters => setters
-                .SetProperty(p => p.Estado, EstadoPedido.Rejected));
+                .SetProperty(p => p.Estado, EstadoPedido.Rejected)
+                .SetProperty(p => p.Detalle, evt.Motivo)
+                .SetProperty(p => p.StockRestante, evt.StockRestante));
 
         if (filasAfectadas > 0)
             logger.LogInformation("Pedido {OrderId} rechazado: {Motivo}", evt.OrderId, evt.Motivo);

@@ -10,4 +10,6 @@ public class Pedido
     public int Cantidad { get; set; }
     public EstadoPedido Estado { get; set; } = EstadoPedido.Pending;
     public DateTime CreadoEn { get; set; } = DateTime.UtcNow;
+    public string? Detalle { get; set; }
+    public int? StockRestante { get; set; }
 }

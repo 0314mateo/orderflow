@@ -33,9 +33,10 @@ public class StockServiceTests
         await db.SaveChangesAsync();
 
         var service = new StockService(db);
-        var resultado = await service.ReservarStockAsync(Guid.NewGuid(), "ABC-01", 3);
+        var reserva = await service.ReservarStockAsync(Guid.NewGuid(), "ABC-01", 3);
 
-        Assert.Equal(ResultadoReserva.Reservado, resultado);
+        Assert.Equal(ResultadoReserva.Reservado, reserva.Resultado);
+        Assert.Equal(7, reserva.StockRestante);
         Assert.Equal(7, db.Stock.First(s => s.Sku == "ABC-01").Disponible);
     }
 
@@ -47,10 +48,11 @@ public class StockServiceTests
         await db.SaveChangesAsync();
 
         var service = new StockService(db);
-        var resultado = await service.ReservarStockAsync(Guid.NewGuid(), "ABC-01", 5);
+        var reserva = await service.ReservarStockAsync(Guid.NewGuid(), "ABC-01", 5);
 
-        Assert.Equal(ResultadoReserva.Rechazado, resultado);
-        Assert.Equal(2, db.Stock.First(s => s.Sku == "ABC-01").Disponible); // no se tocó
+        Assert.Equal(ResultadoReserva.Rechazado, reserva.Resultado);
+        Assert.Equal(2, reserva.StockRestante);
+        Assert.Equal(2, db.Stock.First(s => s.Sku == "ABC-01").Disponible);
     }
 
     [Fact]
@@ -64,10 +66,10 @@ public class StockServiceTests
         var eventId = Guid.NewGuid();
 
         var primerIntento = await service.ReservarStockAsync(eventId, "ABC-01", 3);
-        var segundoIntento = await service.ReservarStockAsync(eventId, "ABC-01", 3); // mismo eventId
+        var segundoIntento = await service.ReservarStockAsync(eventId, "ABC-01", 3);
 
-        Assert.Equal(ResultadoReserva.Reservado, primerIntento);
-        Assert.Equal(ResultadoReserva.YaProcesado, segundoIntento);
-        Assert.Equal(7, db.Stock.First(s => s.Sku == "ABC-01").Disponible); // no 4
+        Assert.Equal(ResultadoReserva.Reservado, primerIntento.Resultado);
+        Assert.Equal(ResultadoReserva.YaProcesado, segundoIntento.Resultado);
+        Assert.Equal(7, db.Stock.First(s => s.Sku == "ABC-01").Disponible);
     }
 }
