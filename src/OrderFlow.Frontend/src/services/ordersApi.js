@@ -27,3 +27,11 @@ export async function listarPedidos() {
 
   return response.json();
 }
+
+export async function listarProductos() {
+  const response = await fetch(`${API_BASE_URL}/products`);
+  if (!response.ok) {
+    throw new Error("No se pudo obtener el catálogo de productos.");
+  }
+  return response.json();
+}

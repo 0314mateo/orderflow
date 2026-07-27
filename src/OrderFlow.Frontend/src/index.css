@@ -172,6 +172,16 @@ body {
   cursor: not-allowed;
 }
 
+.producto-seleccionado {
+  margin: -0.5rem 0 1rem 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.producto-seleccionado strong {
+  color: var(--text);
+}
+
 .error-mensaje {
   color: var(--rejected-text);
   background: var(--rejected-bg);

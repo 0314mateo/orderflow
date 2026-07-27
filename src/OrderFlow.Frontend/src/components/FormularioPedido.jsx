@@ -1,14 +1,22 @@
-import { useState } from "react";
-import { crearPedido } from "../services/ordersApi";
-
-const SKUS_DISPONIBLES = ["ABC-01", "ABC-02", "ABC-03"];
+import { useState, useEffect } from "react";
+import { crearPedido, listarProductos } from "../services/ordersApi";
 
 function FormularioPedido({ onPedidoCreado }) {
+  const [productos, setProductos] = useState([]);
   const [clienteNombre, setClienteNombre] = useState("");
-  const [sku, setSku] = useState(SKUS_DISPONIBLES[0]);
+  const [sku, setSku] = useState("");
   const [cantidad, setCantidad] = useState(1);
   const [error, setError] = useState(null);
   const [enviando, setEnviando] = useState(false);
+
+  useEffect(() => {
+    listarProductos()
+      .then((data) => {
+        setProductos(data);
+        if (data.length > 0) setSku(data[0].sku);
+      })
+      .catch((err) => setError(err.message));
+  }, []);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -19,7 +27,7 @@ function FormularioPedido({ onPedidoCreado }) {
       await crearPedido({ clienteNombre, sku, cantidad: Number(cantidad) });
       setClienteNombre("");
       setCantidad(1);
-      onPedidoCreado(); // avisa al padre para refrescar la lista de inmediato
+      onPedidoCreado();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -43,13 +51,21 @@ function FormularioPedido({ onPedidoCreado }) {
       </label>
 
       <label>
-        Producto (SKU)
+        Producto
         <select value={sku} onChange={(e) => setSku(e.target.value)}>
-          {SKUS_DISPONIBLES.map((s) => (
-            <option key={s} value={s}>{s}</option>
+          {productos.map((p) => (
+            <option key={p.sku} value={p.sku}>
+              {p.nombre}
+            </option>
           ))}
         </select>
       </label>
+
+      {sku && (
+        <p className="producto-seleccionado">
+          SKU: <strong>{sku}</strong>
+        </p>
+      )}
 
       <label>
         Cantidad
@@ -63,7 +79,7 @@ function FormularioPedido({ onPedidoCreado }) {
         />
       </label>
 
-      <button type="submit" disabled={enviando}>
+      <button type="submit" disabled={enviando || productos.length === 0}>
         {enviando ? "Creando..." : "Crear pedido"}
       </button>
 

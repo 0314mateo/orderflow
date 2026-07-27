@@ -1,6 +1,6 @@
 # OrderFlow
 
-Sistema distribuido de pedidos con reserva de inventario asíncrona, desarrollado como prueba técnica. Dos servicios backend en .NET 10 comunicados por eventos vía RabbitMQ, un panel de operaciones en React, y todo orquestado con Docker Compose.
+Sistema distribuido de pedidos con reserva de inventario asíncrona. Dos servicios backend en .NET 10 comunicados por eventos vía RabbitMQ, un panel de operaciones en React, y todo orquestado con Docker Compose.
 
 ## Índice
 
@@ -25,7 +25,7 @@ Sistema distribuido de pedidos con reserva de inventario asíncrona, desarrollad
 ```bash
 git clone https://github.com/0314mateo/orderflow.git
 cd orderflow
-docker compose up --build
+docker compose up --build -d
 ```
 
 Esto levanta 4 contenedores: RabbitMQ, Orders API, Inventory Worker, y el frontend. La primera corrida tarda varios minutos (descarga de imágenes base + compilación); corridas posteriores son mucho más rápidas.
@@ -35,10 +35,9 @@ Esto levanta 4 contenedores: RabbitMQ, Orders API, Inventory Worker, y el fronte
 | Servicio | URL | Notas |
 |---|---|---|
 | Panel de operaciones (frontend) | http://localhost:3000 | Interfaz principal |
-| Orders API | http://localhost:8080 | REST API |
+| Orders API | http://localhost:8080/swagger | REST API |
 | RabbitMQ (panel de administración) | http://localhost:15672 | Usuario/contraseña: `guest` / `guest` |
 
-> Swagger UI de Orders API está disponible solo en desarrollo local (no en el contenedor Docker, que corre en modo `Production` por decisión de diseño — ver sección de arquitectura). Para explorarlo, correr Orders API localmente con `dotnet run` desde `src/OrderFlow.Orders.Api`.
 
 ### Detener el sistema
 
@@ -86,6 +85,10 @@ flowchart LR
 5. Orders API consume ese evento y actualiza el pedido a `Confirmed` o `Rejected` (con guarda de idempotencia: solo si el pedido seguía en `Pending`).
 6. El frontend detecta el cambio en su próximo ciclo de polling.
 
+### Catálogo de productos en la interfaz
+
+El panel no solo trabaja con el `sku` — el formulario y la tabla de pedidos muestran el **nombre legible** de cada producto (ej. "Teclado mecánico" en vez de solo "ABC-01"), consultando `GET /products` una vez al cargar. Esto no fue un requisito explícito del enunciado, pero es una mejora de bajo costo que usa datos que el sistema ya calculaba (el campo `Nombre` del seed) y no estaba exponiendo. Deliberadamente **no** se implementó gestión de catálogo (alta/edición de productos desde el panel) — el enunciado no lo pide, y el catálogo fijo vía seed es proporcional al alcance de la prueba.
+
 ---
 
 ## Modelo de datos y contratos
@@ -114,6 +117,15 @@ flowchart LR
   "disponible": 100
 }
 ```
+### Catálogo (respuesta de `GET /products`)
+
+```json
+[
+  { "sku": "ABC-01", "nombre": "Teclado mecánico" },
+  { "sku": "ABC-02", "nombre": "Mouse inalámbrico" },
+  { "sku": "ABC-03", "nombre": "Monitor 24\"" }
+]
+```
 
 ### Endpoints — Orders API
 
@@ -122,6 +134,7 @@ flowchart LR
 | `POST` | `/orders` | Crea un pedido. `201` con el pedido creado, `400` si los datos son inválidos. |
 | `GET` | `/orders` | Lista todos los pedidos, más recientes primero. |
 | `GET` | `/orders/{id}` | Detalle de un pedido. `404` si no existe. |
+| `GET` | `/products` | Lista el catálogo (`sku`, `nombre`) — usado por el frontend para mostrar nombres legibles en vez de solo el código de producto. |
 
 **Validación al crear un pedido**: `clienteNombre` no vacío, `sku` debe existir en el catálogo, `cantidad` entre 1 y 100.
 
@@ -204,83 +217,51 @@ Esta asimetría es intencional: proteger contra la caída del *consumidor* es re
 
 ## Decisiones de arquitectura
 
-### Dos servicios independientes, cada uno con su propia base de datos
+**Dos bases de datos independientes.** Orders API (`orders.db`) e Inventory Worker (`inventory.db`) nunca comparten base — se comunican solo por eventos vía RabbitMQ. Hay duplicación intencional de catálogo (Orders solo valida que el sku exista; Inventory tiene el stock real) para evitar acoplar los servicios con llamadas síncronas.
 
-Orders API e Inventory Worker no comparten base de datos. Cada uno persiste solo lo que necesita para su propia responsabilidad:
+**Worker Service para Inventory.** No expone HTTP, solo reacciona a eventos — `BackgroundService` es la abstracción correcta para eso, no una Web API vacía.
 
-- **Orders API** (`orders.db`): pedidos, y un catálogo mínimo (`Producto`) que solo sirve para validar que un `sku` exista al crear un pedido.
-- **Inventory Worker** (`inventory.db`): el stock real (`Stock`, con la cantidad que efectivamente se descuenta) y el registro de eventos procesados (`EventosProcesados`) para idempotencia.
+**SQLite en ambos servicios.** Cero configuración extra en Docker Compose y arranque instantáneo, suficiente para el volumen de esta prueba. Para producción real, migraría a PostgreSQL por servicio.
 
-Esta separación es la decisión central del diseño: los dos servicios se comunican **exclusivamente por eventos** a través de RabbitMQ, nunca leyendo o escribiendo directamente en la base del otro.
+**Minimal APIs en Orders API.** Con solo 3-5 endpoints, evita la ceremonia de Controllers sin perder legibilidad.
 
-**Trade-off asumido:** hay una duplicación intencional de datos de catálogo (el sku "existe" en ambas bases, aunque con distinto propósito). Se aceptó esta duplicación en vez de que Orders API consultara a Inventory de forma síncrona (por HTTP) para validar el sku, porque eso introduciría un acoplamiento síncrono entre los dos servicios — justo lo que la arquitectura basada en eventos busca evitar.
+**Proyecto de contratos compartido (`OrderFlow.Contracts`).** Los eventos (`OrderCreated`, `StockReserved`, `StockRejected`) viven en un proyecto referenciado por ambos servicios — un cambio incompatible se detecta en compilación, no en producción como error de deserialización. Acopla ambos servicios a un proyecto común, aceptable por ser un monorepo mantenido por una sola persona.
 
-### Por qué Worker Service (no Web API) para Inventory
+**MassTransit sobre RabbitMQ.Client directo**, para abstraer conexión, serialización y topología de colas. Se fija explícitamente en `8.5.10` porque desde la v9 MassTransit requiere licencia comercial. La idempotencia y las transiciones de estado están implementadas a mano (no dependen de features de la librería): `EventosProcesados` en Inventory, y `WHERE Estado = Pending` en los consumers de Orders — cada uno con la estrategia mínima que su caso requiere (tabla dedicada donde el efecto es mutable, guarda en el `UPDATE` donde la operación ya es naturalmente idempotente).
 
-Inventory Worker no expone ningún endpoint HTTP — su única función es reaccionar a eventos en segundo plano. Se usó la plantilla **Worker Service** de .NET, basada en `BackgroundService`, la abstracción estándar para procesos de fondo de larga duración.
+**React + Vite** para el frontend, por preferencia y velocidad de desarrollo, aunque el backend sea .NET.
 
-### Por qué SQLite (y no PostgreSQL/SQL Server)
+**Docker multi-stage con usuario no root.** Cada servicio .NET compila con el SDK completo en una etapa y corre en runtime mínimo en otra (`aspnet` para Orders API, `runtime` para Inventory Worker, sin pipeline web innecesario). El frontend se compila con Node y se sirve con `nginx:alpine`. Todas las imágenes corren como usuario no root, con `/data` explícitamente cedido a ese usuario. Orders API fuerza `ASPNETCORE_ENVIRONMENT=Development` en Docker para mantener Swagger accesible durante la evaluación de esta prueba (en producción real se retiraría esa variable).
 
-1. **Cero configuración adicional en Docker Compose** — no requiere levantar un contenedor de base de datos aparte.
-2. **El seed y la persistencia de estados mientras el sistema corre** se cumplen igual de bien que con un motor cliente-servidor, para el volumen de esta prueba.
-3. **Arranque instantáneo** — agiliza mucho el ciclo de prueba durante el desarrollo.
-
-**Trade-off asumido:** SQLite no es la elección natural para un sistema productivo con alta concurrencia de escritura. Para producción real, este proyecto migraría a PostgreSQL por servicio — cambio que, gracias a EF Core, se reduce en gran parte a cambiar el proveedor (`UseSqlite` → `UseNpgsql`) y la cadena de conexión.
-
-### Por qué Minimal APIs (no Controllers) en Orders API
-
-Para el tamaño de este servicio (3 endpoints), Minimal APIs evita la ceremonia de controladores sin perder claridad — todo el contrato HTTP es legible de un vistazo en `Program.cs`.
-
-### Proyecto compartido de contratos (`OrderFlow.Contracts`)
-
-Los eventos viven en un proyecto referenciado por ambos servicios, en vez de duplicarse en cada uno. Esto convierte un posible error de deserialización en tiempo de ejecución en un error de compilación — mucho más fácil de detectar.
-
-**Trade-off asumido:** acopla a ambos servicios a un proyecto compartido, lo cual en microservicios "puros" a veces se evita. Para dos servicios en el mismo monorepo, mantenidos por la misma persona, es una simplificación razonable.
-
-### MassTransit como capa de transporte (no RabbitMQ.Client directo)
-
-Se usó MassTransit sobre RabbitMQ.Client porque abstrae la gestión de conexión, la serialización JSON, y la configuración de colas/exchanges.
-
-**Nota sobre versión:** el proyecto fija explícitamente `MassTransit 8.5.10` (última versión de la línea 8.x). A partir de la versión 9, MassTransit pasó a requerir una licencia comercial para inicializar el bus — se evitó deliberadamente para mantener el proyecto 100% funcional con herramientas abiertas.
-
-**Nota importante:** la idempotencia y las reglas de transición de estado **no** dependen de ninguna feature avanzada de MassTransit — se implementaron a mano (`EventosProcesados` en Inventory, y la condición `WHERE Estado = Pending` en los consumidores de Orders). La lógica crítica que se evalúa está en código propio, explícito y testeado.
-
-### Idempotencia: dos estrategias distintas, según el contexto
-
-- **Inventory Worker** usa una tabla dedicada (`EventosProcesados`), porque necesita evitar repetir un efecto con estado mutable (descontar stock).
-- **Orders API** usa una condición de guarda en el propio `UPDATE` (`WHERE Estado = Pending`), sin tabla adicional, porque su operación es una transición de estado naturalmente idempotente una vez aplicada.
-
-### Por qué React + Vite (no Blazor)
-
-Aunque el stack principal del backend es .NET, se eligió React por preferencia y velocidad de desarrollo. Se usó Vite (no Create React App, deprecado) y JavaScript plano para mantener el alcance proporcional al tiempo disponible.
-
-### Docker — imágenes multi-stage y usuario no root
-
-Cada servicio .NET tiene un Dockerfile de dos etapas: una con el SDK completo (solo para compilar) y otra con el runtime mínimo (`aspnet` para Orders API, `runtime` para Inventory Worker, sin el pipeline web que no necesita). El frontend se compila con Node en una etapa y se sirve con `nginx:alpine` en la otra. Todas las imágenes finales corren como usuario no root (comportamiento por defecto de las imágenes oficiales de Microsoft desde .NET 8), con los volúmenes de datos (`/data`) explícitamente cedidos a ese usuario en el Dockerfile.
-
-Dentro de Docker, cada servicio corre en `ASPNETCORE_ENVIRONMENT=Production` por defecto — por eso Swagger UI no está disponible en el contenedor de Orders API (decisión consciente: no exponer documentación interactiva en un entorno que simula producción).
 
 ### Estructura del repositorio (monorepo)
 
+```text
 orderflow/
-src/
-OrderFlow.Contracts/ # eventos compartidos
-OrderFlow.Orders.Api/ # servicio HTTP
-OrderFlow.Inventory.Worker/ # servicio de background
-OrderFlow.Frontend/ # panel de operaciones (React)
-tests/
-OrderFlow.Orders.Tests/
-OrderFlow.Inventory.Tests/
-docker-compose.yml
+├── src/
+│   ├── OrderFlow.Contracts/           # Eventos compartidos
+│   ├── OrderFlow.Orders.Api/          # Servicio HTTP
+│   ├── OrderFlow.Inventory.Worker/    # Servicio de background
+│   └── OrderFlow.Frontend/            # Panel de operaciones (React)
+├── tests/
+│   ├── OrderFlow.Orders.Tests/
+│   └── OrderFlow.Inventory.Tests/
+└── docker-compose.yml
+```
 
 ---
 
-## Qué haría distinto con más tiempo
+## ¿Qué haría diferente con más tiempo?
 
-- **Patrón Outbox** para la publicación de `OrderCreated`: en vez de capturar y loguear el fallo de publicación, guardar el evento pendiente en una tabla local (en la misma transacción que el pedido) y tener un proceso de background que reintente publicarlo hasta confirmar éxito. Esto eliminaría por completo el escenario de pedidos `Pending` huérfanos cuando el broker está caído.
-- **Reconciliación automática**: un endpoint o job periódico que detecte pedidos `Pending` más antiguos que cierto umbral y los marque para revisión manual, o reintente su publicación.
-- **Tests de frontend**: no se escribieron tests de componentes React (mencionado como opcional en el enunciado) — se priorizó backend por ser lo explícitamente evaluado con mayor peso.
-- **Actualización en tiempo real con WebSockets/SignalR** en lugar de polling, para reducir la latencia percibida de 3 segundos y el tráfico de red innecesario cuando no hay cambios.
-- **Kubernetes**: no se incluyeron manifiestos (bonus opcional del enunciado) por priorización de tiempo hacia los requisitos obligatorios.
-- **Migración a PostgreSQL** por servicio, en vez de SQLite, para un entorno más cercano a producción real con mayor concurrencia de escritura.
-- **Autenticación/autorización**: explícitamente fuera de alcance según el enunciado, pero sería el siguiente paso natural antes de cualquier despliegue real.
+- **Despliegue en Kubernetes**: crear los manifiestos YAML necesarios para desplegar toda la solución en un clúster de Kubernetes. Utilizaría Rancher para simplificar la administración, el despliegue y la gestión de múltiples entornos.
+
+- **Migración a PostgreSQL**: reemplazar SQLite por una base de datos PostgreSQL independiente para cada servicio, acercando la arquitectura a un entorno de producción con mejor soporte para concurrencia, escalabilidad y persistencia.
+
+- **Autenticación y autorización**: aunque el enunciado excluye explícitamente esta funcionalidad, sería el siguiente paso antes de un despliegue real, implementando autenticación basada en JWT y autorización por roles.
+
+- **Reconciliación automática de pedidos**: incorporar un proceso en segundo plano o un endpoint administrativo que identifique pedidos en estado `Pending` durante un tiempo determinado, permitiendo reintentar su procesamiento o marcarlos para revisión manual.
+
+- **Panel de administración de productos**: desarrollar una interfaz para la gestión del catálogo, permitiendo crear, editar y eliminar productos, así como administrar su inventario sin necesidad de modificar la base de datos directamente.
+
+- **Actualizaciones en tiempo real**: sustituir el mecanismo de polling por WebSockets mediante SignalR, reduciendo la latencia percibida y evitando consultas periódicas innecesarias cuando no existen cambios.
+

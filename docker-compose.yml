@@ -22,6 +22,7 @@ services:
     ports:
       - "8080:8080"
     environment:
+      ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__OrdersDb: "Data Source=/data/orders.db"
       RabbitMq__Host: rabbitmq
       RabbitMq__Username: guest

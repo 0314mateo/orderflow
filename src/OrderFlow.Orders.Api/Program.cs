@@ -85,6 +85,9 @@ app.MapGet("/weatherforecast", () =>
 })
 .WithName("GetWeatherForecast");
 
+app.MapGet("/products", async (OrdersDbContext db) =>
+    await db.Catalogo.Select(p => new { p.Sku, p.Nombre }).ToListAsync());
+
 app.MapPost("/orders", async (CrearPedidoRequest req, OrdersDbContext db, IEventPublisher publisher, ILogger<Program> logger) =>
 {
     var errores = PedidoValidator.Validar(req, db);
