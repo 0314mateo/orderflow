@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orders-api-config
+data:
+  ConnectionStrings__OrdersDb: "Data Source=/data/orders.db"
+  RabbitMq__Host: "rabbitmq"
+  RabbitMq__Username: "guest"
+  Cors__FrontendOrigin: "http://frontend-service"
+  ASPNETCORE_URLS: "http://+:8080"
